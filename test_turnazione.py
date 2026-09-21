@@ -146,8 +146,8 @@ def main():
     verifica("mer sett.3: sostituto = Giuseppe (Stefano ha già un doppio turno)",
              ("Sostituzione (doppio turno)", "Giuseppe"),
              (mercoledi3["tipo"], mercoledi3["conducente"]))
-    verifica("mer sett.3: recupero annunciato per la settimana 4",
-             True, "da recuperare nella settimana 4" in (mercoledi3["motivo"] or ""))
+    verifica("mer sett.3: recupero annunciato a partire dalla settimana 4",
+             True, "a partire dalla settimana 4" in (mercoledi3["motivo"] or ""))
     verifica("gio sett.4: Rocco recupera sul turno di Giuseppe",
              ("Recupero", "Rocco", "Giuseppe"),
              (giovedi4["tipo"], giovedi4["conducente"], giovedi4["riposo"]))
@@ -170,21 +170,78 @@ def main():
              {x["tipo"] for x in cal})
 
     # ------------------------------------------------------------- SCENARIO E
-    print("\nSCENARIO E - R7: recupero non effettuabile, resta da saldare")
+    print("\nSCENARIO E - R7: il recupero slitta di una settimana")
+    # Rocco salta mer sett.2; Giuseppe lo sostituisce e diventa creditore.
+    # In sett.3 Rocco e' in licenza: il recupero non puo' avvenire e slitta alla sett.4.
     wb = banco.esegui("e", [(2, "Rocco", ALTRO, dt.date(2026, 10, 7)),
                             (3, "Rocco", LICENZA, None)])
     cal = calendario(wb)
     verifica("mer sett.2: sostituto = Giuseppe", "Giuseppe", cal[7]["conducente"])
     verifica("gio sett.3: il recupero non scatta, Rocco è assente",
              ("Ordinario", "Giuseppe"), (cal[13]["tipo"], cal[13]["conducente"]))
+    verifica("gio sett.4: il recupero slitta qui",
+             ("Recupero", "Rocco", "Giuseppe"),
+             (cal[18]["tipo"], cal[18]["conducente"], cal[18]["riposo"]))
+    verifica("gio sett.4: il motivo cita la settimana di origine del debito",
+             True, "saltato nella settimana 2" in (cal[18]["motivo"] or ""))
+    verifica("la settimana 5 torna ordinaria", {"Ordinario"}, {x["tipo"] for x in cal[20:25]})
     r = riepilogo(wb)
-    verifica("Rocco: 1 da recuperare, 0 recuperi effettuati, 1 ancora da saldare",
-             (1, 0, 1), (r["Rocco"][5], r["Rocco"][2], r["Rocco"][6]))
+    verifica("Rocco: 1 da recuperare, 1 recupero effettuato, 0 ancora da saldare",
+             (1, 1, 0), (r["Rocco"][5], r["Rocco"][2], r["Rocco"][6]))
     verifica("Rocco: 1 turno saltato non recuperabile (licenza sett.3)", 1, r["Rocco"][4])
+    verifica("Giuseppe: bilancio in pari (1 doppio turno, 1 riposo compensativo)",
+             13, r["Giuseppe"][3])
 
     # ------------------------------------------------------------- SCENARIO F
-    print("\nSCENARIO F - due assenze di settimana intera nella stessa settimana")
-    cal = calendario(banco.esegui("f", [(5, "Nicola", LICENZA, None),
+    print("\nSCENARIO F - R7: il recupero slitta di più settimane")
+    # Rocco salta mer sett.2 e resta assente per tutte le sett.3 e 4:
+    # il debito verso Giuseppe si salda alla prima settimana utile, la 5.
+    wb = banco.esegui("f", [(2, "Rocco", ALTRO, dt.date(2026, 10, 7)),
+                            (3, "Rocco", LICENZA, None),
+                            (4, "Rocco", ESTERNA, None)])
+    cal = calendario(wb)
+    verifica("gio sett.3: nessun recupero", "Ordinario", cal[13]["tipo"])
+    verifica("gio sett.4: nessun recupero", "Ordinario", cal[18]["tipo"])
+    verifica("gio sett.5: il recupero si esegue qui",
+             ("Recupero", "Rocco", "Giuseppe"),
+             (cal[23]["tipo"], cal[23]["conducente"], cal[23]["riposo"]))
+    verifica("le settimane 6 e 7 sono ordinarie", {"Ordinario"}, {x["tipo"] for x in cal[25:35]})
+    r = riepilogo(wb)
+    verifica("Rocco: 1 recupero effettuato, 0 ancora da saldare",
+             (1, 0), (r["Rocco"][2], r["Rocco"][6]))
+    verifica("Rocco: 2 turni saltati non recuperabili (sett.3 e 4)", 2, r["Rocco"][4])
+
+    # ------------------------------------------------------------- SCENARIO G
+    print("\nSCENARIO G - catena di due assenze recuperabili consecutive")
+    wb = banco.esegui("g", [(2, "Nicola", ALTRO, dt.date(2026, 10, 5)),
+                            (3, "Nicola", ALTRO, dt.date(2026, 10, 12))])
+    cal = calendario(wb)
+    verifica("lun sett.2: sostituto = Stefano", "Stefano", cal[5]["conducente"])
+    verifica("mar sett.3: Nicola restituisce a Stefano",
+             ("Recupero", "Nicola", "Stefano"),
+             (cal[11]["tipo"], cal[11]["conducente"], cal[11]["riposo"]))
+    verifica("lun sett.3: Nicola assente di nuovo, sostituto diverso da Stefano",
+             ("Sostituzione (doppio turno)", "Rocco"), (cal[10]["tipo"], cal[10]["conducente"]))
+    verifica("mer sett.4: Nicola restituisce a Rocco",
+             ("Recupero", "Nicola", "Rocco"),
+             (cal[17]["tipo"], cal[17]["conducente"], cal[17]["riposo"]))
+    r = riepilogo(wb)
+    verifica("Nicola: 2 da recuperare, 2 recuperi effettuati, 0 da saldare",
+             (2, 2, 0), (r["Nicola"][5], r["Nicola"][2], r["Nicola"][6]))
+    verifica("tutti chiudono con 13 guide",
+             [13, 13, 13, 13, 13], [r[n][3] for n in
+                                    ["Nicola", "Stefano", "Rocco", "Giuseppe", "Savino"]])
+
+    # ------------------------------------------------------------- SCENARIO H
+    print("\nSCENARIO H - debito aperto alla fine del periodo")
+    wb = banco.esegui("h", [(13, "Savino", ALTRO, dt.date(2026, 12, 25))])
+    r = riepilogo(wb)
+    verifica("Savino: 1 da recuperare, 0 effettuati, 1 ancora da saldare",
+             (1, 0, 1), (r["Savino"][5], r["Savino"][2], r["Savino"][6]))
+
+    # ------------------------------------------------------------- SCENARIO I
+    print("\nSCENARIO I - due assenze di settimana intera nella stessa settimana")
+    cal = calendario(banco.esegui("i", [(5, "Nicola", LICENZA, None),
                                         (5, "Savino", ESTERNA, None)]))
     sett5 = cal[20:25]
     verifica("tutti e 5 i giorni hanno un conducente", 5,
@@ -197,9 +254,9 @@ def main():
              {sett5[0]["conducente"], sett5[4]["conducente"]} & {"Nicola", "Savino"})
     verifica("nessun recupero nella settimana 6", {"Ordinario"}, {x["tipo"] for x in cal[25:30]})
 
-    # ------------------------------------------------------------- SCENARIO G
-    print("\nSCENARIO G - R6: foglio «Comunicazione Giovedì»")
-    wb = banco.esegui("g", [(5, "Nicola", LICENZA, None), (5, "Savino", ESTERNA, None)],
+    # ------------------------------------------------------------- SCENARIO L
+    print("\nSCENARIO L - R6: foglio «Comunicazione Giovedì»")
+    wb = banco.esegui("l", [(5, "Nicola", LICENZA, None), (5, "Savino", ESTERNA, None)],
                       settimana_comunicazione=5)
     cg = wb["Comunicazione Giovedì"]
     verifica("periodo della settimana 5", "26/10/2026 - 30/10/2026", cg["C5"].value)

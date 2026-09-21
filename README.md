@@ -43,8 +43,9 @@ Le celle su sfondo giallo sono modificabili; tutte le altre contengono formule.
 | **R3** | Mancata presa della macchina per altri motivi | Turno **da recuperare** nella settimana successiva |
 | **R4** | Scelta del sostituto | Va a chi ha finora **meno doppi turni**; a parità si scorre l'ordine base a partire dal collega successivo all'assente, così il doppio turno cade sempre su una turnazione diversa dalla prima |
 | **R5** | Modalità del recupero (solo R3) | La settimana dopo chi ha saltato guida due volte — il proprio giorno più quello di chi lo aveva sostituito — e il sostituto è a riposo compensativo |
+| **R5-bis** | Più recuperi verso la stessa persona | Si saldano uno per settimana, nell'ordine in cui sono maturati; chi sta già guidando un recupero non viene scelto come sostituto nella stessa settimana |
 | **R6** | Comunicazione | Le posizioni della settimana successiva vanno comunicate entro il **giovedì** |
-| **R7** | Recupero non effettuabile | Se chi deve recuperare è assente anche nella settimana del recupero, il debito resta contabilizzato in «Riepilogo» → *Recuperi ancora da saldare* |
+| **R7** | Recupero non effettuabile subito | Se chi deve recuperare è assente anche nella settimana del recupero, il turno **slitta da solo alla prima settimana utile**, sempre sul giorno di chi lo aveva sostituito. Un debito ancora aperto a fine periodo resta in «Riepilogo» → *Recuperi ancora da saldare* |
 
 ## Rigenerare o estendere il calendario
 
@@ -64,8 +65,10 @@ sudo apt-get install -y libreoffice-calc
 python3 test_turnazione.py
 ```
 
-La suite compila il foglio «Assenze» con sette scenari (turnazione base,
+La suite compila il foglio «Assenze» con nove scenari — turnazione base,
 licenza di settimana intera, assenza recuperabile con relativo recupero,
-rotazione dei doppi turni, recupero non effettuabile, doppia assenza
-contemporanea, comunicazione del giovedì), fa ricalcolare il file da
-LibreOffice Calc e confronta i risultati con quelli attesi.
+rotazione dei doppi turni, slittamento del recupero di una e di più settimane,
+catena di assenze recuperabili consecutive, debito aperto a fine periodo,
+doppia assenza contemporanea e comunicazione del giovedì — fa ricalcolare il
+file da LibreOffice Calc e confronta i risultati con quelli attesi
+(52 controlli).

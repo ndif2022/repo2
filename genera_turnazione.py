@@ -174,13 +174,19 @@ def foglio_regole(wb, inizio, fine, settimane):
          "Nella settimana successiva chi ha saltato il turno guida due volte: il proprio giorno "
          "più il giorno di chi lo aveva sostituito. Il sostituto, quella settimana, è a riposo "
          "compensativo. Il bilancio dei turni torna in pari.")
+    voce("R5-bis – Più recuperi verso la stessa persona",
+         "I recuperi dovuti a uno stesso collega si saldano uno per settimana, nell'ordine in cui "
+         "sono maturati. Chi sta già guidando un turno di recupero non viene scelto come sostituto "
+         "nella stessa settimana.")
     voce("R6 – Comunicazione del giovedì",
          "Entro il giovedì di ogni settimana vanno comunicate a tutti le posizioni della "
          "settimana successiva. Usare il foglio «Comunicazione Giovedì»: contiene il prospetto "
          "e il testo già pronto da inviare.")
-    voce("R7 – Recupero non effettuabile",
-         "Se chi deve recuperare è a sua volta assente nella settimana del recupero, il recupero "
-         "non si perde: resta contabilizzato nel foglio «Riepilogo» alla voce «Recuperi da saldare».")
+    voce("R7 – Slittamento automatico del recupero",
+         "Se chi deve recuperare è a sua volta assente nella settimana del recupero, il turno non "
+         "si perde: slitta da solo alla prima settimana utile, sempre sul giorno di chi lo aveva "
+         "sostituito. Se al termine del periodo il debito è ancora aperto, resta contabilizzato "
+         "nel foglio «Riepilogo» alla voce «Recuperi ancora da saldare».")
 
     sezione("3. COME SI USA IL FILE")
     voce("Foglio da compilare", "Solo «Assenze». Tutti gli altri fogli si aggiornano da soli.")
@@ -260,8 +266,8 @@ def foglio_assenze(wb, inizio, settimane):
 
         # Periodo della settimana (calcolato dal numero di settimana)
         ws.cell(row=r, column=2).value = (
-            f'=IF($A{r}="","",TEXT(Calcoli!$AB${TUR_R0}+($A{r}-1)*7,"dd/mm/yyyy")'
-            f'&" - "&TEXT(Calcoli!$AB${TUR_R0}+($A{r}-1)*7+4,"dd/mm/yyyy"))'
+            f'=IF($A{r}="","",TEXT(Calcoli!$AG${TUR_R0}+($A{r}-1)*7,"dd/mm/yyyy")'
+            f'&" - "&TEXT(Calcoli!$AG${TUR_R0}+($A{r}-1)*7+4,"dd/mm/yyyy"))'
         )
         # Turno da recuperare?
         ws.cell(row=r, column=6).value = (
@@ -304,7 +310,13 @@ def foglio_assenze(wb, inizio, settimane):
 
 
 def foglio_calcoli(wb, inizio, settimane):
-    """Foglio di appoggio: risolve assenze, sostituzioni e recuperi."""
+    """Foglio di appoggio: risolve assenze, sostituzioni e recuperi.
+
+    I recuperi seguono una coda FIFO per creditore: chi salta un turno per un
+    motivo non giustificato resta debitore verso chi lo ha sostituito finche'
+    non e' in condizione di restituirlo. Se nella settimana successiva e' a sua
+    volta assente, il debito slitta da solo alla prima settimana utile.
+    """
     ws = wb.create_sheet("Calcoli")
     ws["A1"] = "Foglio di appoggio - non modificare"
     ws["A1"].font = F_BOLD
@@ -313,10 +325,12 @@ def foglio_calcoli(wb, inizio, settimane):
         "Sett.", "Data", "Titolare", "Tipo assenza titolare", "Titolare assente",
         "Recuperabile",
     ] + [f"Disp. {p}" for p in PARTECIPANTI] + [
-        "Recupero da", "Recupero attivo",
+        "Debitore del recupero", "Recupero attivo",
     ] + [f"Punt. {p}" for p in PARTECIPANTI] + [
         "Sostituto", "Sostituto recuperabile", "Conducente effettivo", "Tipo turno",
         "A riposo", "Motivo variazione", "Nota sintetica",
+        "Progressivo debito", "Chiave debito", "Debiti maturati", "Debiti saldati",
+        "Riga del debito", "Settimana del debito",
     ]
     for i, testo in enumerate(etichette, start=1):
         cella = ws.cell(row=TUR_R0 - 1, column=i, value=testo)
@@ -326,6 +340,7 @@ def foglio_calcoli(wb, inizio, settimane):
         ws.column_dimensions[get_column_letter(i)].width = 18
 
     n_righe = settimane * 5
+    prima = TUR_R0
     plist = f"Partecipanti!$B${PART_R0}:$B${PART_R0 + len(PARTECIPANTI) - 1}"
     pcell = [f"Partecipanti!$B${PART_R0 + i}" for i in range(len(PARTECIPANTI))]
     disp_col = ["G", "H", "I", "J", "K"]
@@ -336,6 +351,9 @@ def foglio_calcoli(wb, inizio, settimane):
         settimana = i // 5 + 1
         giorno = i % 5
         data = inizio + dt.timedelta(weeks=settimana - 1, days=giorno)
+        sett_da = TUR_R0 + (settimana - 1) * 5   # lunedi' della settimana corrente
+        sett_a = sett_da + 4                     # venerdi' della settimana corrente
+        prec_a = sett_da - 1                     # ultima riga delle settimane precedenti
 
         ws.cell(row=r, column=1, value=settimana)
         cella_data = ws.cell(row=r, column=2, value=data)
@@ -343,21 +361,23 @@ def foglio_calcoli(wb, inizio, settimane):
         # Titolare del turno secondo l'ordine base
         ws.cell(row=r, column=3, value=f"={pcell[giorno]}")
 
-        # Tipo di assenza del titolare
+        # D: tipo di assenza del titolare
         ws.cell(row=r, column=4, value=(
             f'=IF(COUNTIFS(A_PERS,$C{r},A_SETT,$A{r},A_TIPO,"{TIPO_LICENZA}")>0,"{TIPO_LICENZA}",'
             f'IF(COUNTIFS(A_PERS,$C{r},A_SETT,$A{r},A_TIPO,"{TIPO_ESTERNA}")>0,"{TIPO_ESTERNA}",'
             f'IF(COUNTIFS(A_PERS,$C{r},A_DATA,$B{r})>0,'
             f'INDEX(A_TIPO,MATCH(1,INDEX((A_PERS=$C{r})*(A_DATA=$B{r}),0),0)),"")))'
         ))
-        # Titolare assente (1/0)
+        # E: titolare assente (1/0)
         ws.cell(row=r, column=5, value=f'=IF($D{r}="",0,1)')
-        # Turno recuperabile (1/0)
+        # F: turno da recuperare (1/0). Se il giorno e' gia' un riposo compensativo
+        #    l'assenza del titolare non genera alcun debito.
         ws.cell(row=r, column=6, value=(
-            f'=IF($E{r}=0,0,IF(OR($D{r}="{TIPO_LICENZA}",$D{r}="{TIPO_ESTERNA}"),0,1))'
+            f'=IF($M{r}=1,0,IF($E{r}=0,0,'
+            f'IF(OR($D{r}="{TIPO_LICENZA}",$D{r}="{TIPO_ESTERNA}"),0,1)))'
         ))
 
-        # Disponibilita' di ciascun partecipante in quella data
+        # G:K disponibilita' di ciascun partecipante in quella data
         for k, col in enumerate(disp_col):
             ws.cell(row=r, column=ord(col) - 64, value=(
                 f'=IF(COUNTIFS(A_PERS,{pcell[k]},A_DATA,$B{r})'
@@ -365,28 +385,48 @@ def foglio_calcoli(wb, inizio, settimane):
                 f'+COUNTIFS(A_PERS,{pcell[k]},A_SETT,$A{r},A_TIPO,"{TIPO_ESTERNA}")>0,0,1)'
             ))
 
-        # L: chi deve un recupero al titolare di questa riga (dalla settimana precedente)
+        # AB: debiti maturati verso il titolare di questa riga (settimane precedenti)
+        # AC: debiti gia' saldati sul suo giorno
+        # AD: posizione, nella coda FIFO, del debito piu' vecchio ancora aperto
+        # AE: settimana in cui quel debito e' nato
+        # L:  chi deve il recupero
         if settimana == 1:
+            ws.cell(row=r, column=28, value=0)
+            ws.cell(row=r, column=29, value=0)
+            ws.cell(row=r, column=30, value=0)
+            ws.cell(row=r, column=31, value="")
             ws.cell(row=r, column=12, value="")
         else:
-            # le 5 righe della settimana precedente, ancorate al suo lunedi'
-            p0 = TUR_R0 + (settimana - 2) * 5
-            p1 = p0 + 4
-            ws.cell(row=r, column=12, value=(
-                f'=IFERROR(INDEX($C{p0}:$C{p1},'
-                f'MATCH(1,INDEX(($T{p0}:$T{p1}=$C{r})*1,0),0)),"")'
+            ws.cell(row=r, column=28, value=f'=COUNTIF($T${prima}:$T{prec_a},$C{r})')
+            ws.cell(row=r, column=29, value=(
+                f'=COUNTIFS($C${prima}:$C{prec_a},$C{r},$M${prima}:$M{prec_a},1)'
             ))
-        # M: recupero effettivamente eseguibile questa settimana
+            ws.cell(row=r, column=30, value=(
+                f'=IF($AB{r}>$AC{r},IFERROR(MATCH($C{r}&"#"&($AC{r}+1),'
+                f'$AA${prima}:$AA{prec_a},0),0),0)'
+            ))
+            ws.cell(row=r, column=31, value=(
+                f'=IF($AD{r}=0,"",INDEX($A${prima}:$A{prec_a},$AD{r}))'
+            ))
+            ws.cell(row=r, column=12, value=(
+                f'=IF($AD{r}=0,"",INDEX($C${prima}:$C{prec_a},$AD{r}))'
+            ))
+        # M: il debitore e' disponibile, quindi il recupero si esegue oggi
         ws.cell(row=r, column=13, value=(
             f'=IF($L{r}="",0,IF(INDEX($G{r}:$K{r},MATCH($L{r},{plist},0))=1,1,0))'
         ))
 
-        # N:R punteggio dei candidati alla sostituzione (piu' basso = scelto)
+        # N:R punteggio dei candidati alla sostituzione (piu' basso = scelto).
+        # Esclusi gli indisponibili, il titolare stesso e chi in questa settimana
+        # sta gia' guidando un turno di recupero.
         for k, col in enumerate(punt_col):
             storico = "0" if r == TUR_R0 else f'COUNTIF($S${TUR_R0}:$S{r - 1},{pcell[k]})'
+            impegnato = (f'SUMPRODUCT(($M${sett_da}:$M${sett_a}=1)*'
+                         f'($L${sett_da}:$L${sett_a}={pcell[k]}))')
             ws.cell(row=r, column=ord(col) - 64, value=(
                 f'=IF(${disp_col[k]}{r}=0,100000,IF({pcell[k]}=$C{r},100000,'
-                f'{storico}*100+MOD({k + 1}-MATCH($C{r},{plist},0)-1,5)))'
+                f'IF({impegnato}>0,100000,'
+                f'{storico}*100+MOD({k + 1}-MATCH($C{r},{plist},0)-1,5))))'
             ))
 
         # S: sostituto scelto
@@ -395,14 +435,15 @@ def foglio_calcoli(wb, inizio, settimane):
             f'IF(MIN($N{r}:$R{r})>=100000,"DA ASSEGNARE",'
             f'INDEX({plist},MATCH(MIN($N{r}:$R{r}),$N{r}:$R{r},0))))'
         ))
-        # T: sostituto di un turno recuperabile (aggancio per la settimana successiva)
+        # T: sostituto di un turno recuperabile: diventa creditore
         ws.cell(row=r, column=20, value=(
             f'=IF(AND($F{r}=1,$S{r}<>"",$S{r}<>"DA ASSEGNARE"),$S{r},"")'
         ))
+        # Z, AA: posizione del credito nella coda del creditore e chiave di ricerca
+        ws.cell(row=r, column=26, value=f'=IF($T{r}="","",COUNTIF($T${prima}:$T{r},$T{r}))')
+        ws.cell(row=r, column=27, value=f'=IF($T{r}="","",$T{r}&"#"&$Z{r})')
         # U: conducente effettivo
-        ws.cell(row=r, column=21, value=(
-            f'=IF($M{r}=1,$L{r},IF($E{r}=0,$C{r},$S{r}))'
-        ))
+        ws.cell(row=r, column=21, value=f'=IF($M{r}=1,$L{r},IF($E{r}=0,$C{r},$S{r}))')
         # V: tipo di turno
         ws.cell(row=r, column=22, value=(
             f'=IF($M{r}=1,"Recupero",IF($E{r}=0,"Ordinario",'
@@ -412,29 +453,33 @@ def foglio_calcoli(wb, inizio, settimane):
         ws.cell(row=r, column=23, value=f'=IF(OR($M{r}=1,$E{r}=1),$C{r},"")')
         # X: motivo della variazione
         ws.cell(row=r, column=24, value=(
-            f'=IF($M{r}=1,$L{r}&" recupera il turno saltato nella settimana "&($A{r}-1)'
-            f'&"; "&$C{r}&" a riposo compensativo",'
+            f'=IF($M{r}=1,'
+            f'IF($E{r}=1,$L{r}&" copre il turno recuperando quello saltato nella settimana "'
+            f'&$AE{r}&"; "&$C{r}&" assente ("&$D{r}&")",'
+            f'$L{r}&" recupera il turno saltato nella settimana "&$AE{r}'
+            f'&"; "&$C{r}&" a riposo compensativo"),'
             f'IF($E{r}=1,$C{r}&" assente ("&$D{r}&")"'
             f'&IF($S{r}="DA ASSEGNARE","; nessun sostituto disponibile",'
             f'"; sostituisce "&$S{r}&" con doppio turno")'
-            f'&IF($F{r}=1,"; turno da recuperare nella settimana "&($A{r}+1),'
+            f'&IF($F{r}=1,"; turno da recuperare a partire dalla settimana "&($A{r}+1),'
             f'"; turno non da recuperare"),""))'
         ))
-
         # Y: nota sintetica, usata nel testo della comunicazione del giovedi'
         ws.cell(row=r, column=25, value=(
-            f'=IF($M{r}=1,"recupera il turno saltato nella settimana "&($A{r}-1)'
-            f'&", "&$C{r}&" a riposo",'
+            f'=IF($M{r}=1,'
+            f'IF($E{r}=1,"recupero del turno saltato nella settimana "&$AE{r}'
+            f'&", "&$C{r}&" assente",'
+            f'"recupera il turno saltato nella settimana "&$AE{r}&", "&$C{r}&" a riposo"),'
             f'IF($E{r}=1,IF($S{r}="DA ASSEGNARE","turno da assegnare: "&$C{r}&" assente",'
             f'"in sostituzione di "&$C{r}&", doppio turno"),""))'
         ))
 
-    # AB: data di inizio del servizio (usata dal foglio Assenze)
-    cella = ws.cell(row=TUR_R0, column=28, value=inizio)
+    # AG: parametri del servizio, usati dal foglio Assenze
+    ws.cell(row=TUR_R0 - 1, column=33, value="Inizio servizio").font = F_BOLD
+    cella = ws.cell(row=TUR_R0, column=33, value=inizio)
     cella.number_format = FMT_DATA
-    ws.cell(row=TUR_R0 - 1, column=28, value="Inizio servizio").font = F_BOLD
-    ws.cell(row=TUR_R0 + 1, column=28, value=settimane)
-    ws.cell(row=TUR_R0, column=29, value="numero settimane").font = F_NOTA
+    ws.cell(row=TUR_R0 + 1, column=33, value=settimane)
+    ws.cell(row=TUR_R0 + 1, column=34, value="numero settimane").font = F_NOTA
 
     ws.sheet_state = "hidden"
     return ws
@@ -660,8 +705,9 @@ def foglio_riepilogo(wb, settimane):
         ("Turni saltati da recuperare",
          "Turni persi per altri motivi: generano un recupero nella settimana successiva (R3)."),
         ("Recuperi ancora da saldare",
-         "Recuperi maturati e non ancora effettuati, di norma perché la persona era assente anche "
-         "nella settimana del recupero (R7): vanno riprogrammati."),
+         "Recuperi maturati e non ancora effettuati entro la fine del periodo. Durante il periodo "
+         "il recupero slitta da solo alla prima settimana utile (R7): un valore diverso da zero "
+         "segnala un debito rimasto aperto, da riportare nel calendario successivo."),
     ]
     for chiave, valore in note:
         r += 1
