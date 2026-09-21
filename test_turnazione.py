@@ -271,6 +271,30 @@ def main():
     print("\n--- testo generato per la settimana 5 ---")
     print(testo)
 
+    # ------------------------------------------------------------- SCENARIO M
+    print("\nSCENARIO M - grafico «Composizione dei turni per partecipante»")
+    ws = load_workbook(sorgente)["Riepilogo"]
+    verifica("un solo grafico nel foglio Riepilogo", 1, len(ws._charts))
+    grafico = ws._charts[0]
+    verifica("barre orizzontali impilate", ("bar", "stacked"),
+             (grafico.type, grafico.grouping))
+    verifica("tre serie: ordinari, doppi turni, recuperi", 3, len(grafico.series))
+    verifica("colori assegnati in ordine fisso", ["2A78D6", "EB6834", "1BAF7A"],
+             [x.graphicalProperties.solidFill.srgbClr for x in grafico.series])
+    verifica("legenda presente, in basso", "b", grafico.legend.position)
+    verifica("nomi nello stesso ordine della tabella", "maxMin",
+             grafico.x_axis.scaling.orientation)
+    verifica("fondo scala fissato, nessuna barra tagliata", (0, 18),
+             (grafico.y_axis.scaling.min, grafico.y_axis.scaling.max))
+    riferimenti = [str(x.val.numRef.f).replace("'", "") for x in grafico.series]
+    verifica("le serie leggono le colonne B, C e D delle righe 6-10",
+             ["Riepilogo!$B$6:$B$10", "Riepilogo!$C$6:$C$10", "Riepilogo!$D$6:$D$10"],
+             riferimenti)
+    categorie = grafico.series[0].cat
+    riferimento_cat = (categorie.strRef or categorie.numRef).f
+    verifica("le categorie leggono i nomi in colonna A",
+             "Riepilogo!$A$6:$A$10", str(riferimento_cat).replace("'", ""))
+
     print(f"\nControlli superati: {esiti['ok']} · falliti: {esiti['ko']}")
     shutil.rmtree(lavoro, ignore_errors=True)
     return 0 if esiti["ko"] == 0 else 1

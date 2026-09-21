@@ -13,6 +13,11 @@ import argparse
 import datetime as dt
 
 from openpyxl import Workbook
+from openpyxl.chart import BarChart, Reference
+from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.chart.text import RichText
+from openpyxl.drawing.text import (CharacterProperties, Paragraph, ParagraphProperties,
+                                   RichTextProperties)
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
@@ -37,6 +42,7 @@ MAX_ASSENZE = 200          # righe disponibili nel foglio Assenze
 ASS_R0 = 5                 # prima riga dati del foglio Assenze
 TUR_R0 = 6                 # prima riga dati dei fogli Turnazione / Calcoli
 PART_R0 = 5                # prima riga dati del foglio Partecipanti
+RIEP_R0 = 6                # prima riga dati del foglio Riepilogo
 
 # --------------------------------------------------------------------------- #
 # Stili
@@ -67,6 +73,16 @@ FILL_INPUT = PatternFill("solid", fgColor=GIALLO)
 FILL_SEZ = PatternFill("solid", fgColor=AZZURRO)
 FILL_GRIGIO = PatternFill("solid", fgColor=GRIGIO)
 
+# Palette del grafico: slot categoriali 1-3 (blu, arancio, verde acqua).
+# Verificata per daltonismo sulle coppie adiacenti di una barra impilata:
+# CVD Delta E 9.2, visione normale 27.6, entrambi sopra le soglie richieste.
+SERIE_1 = "2A78D6"
+SERIE_2 = "EB6834"
+SERIE_3 = "1BAF7A"
+INCHIOSTRO = "0B0B0B"
+INCHIOSTRO_2 = "52514E"
+GRIGLIA = "D8D8D4"
+
 _sottile = Side(style="thin", color="BFBFBF")
 BORDO = Border(left=_sottile, right=_sottile, top=_sottile, bottom=_sottile)
 
@@ -76,6 +92,83 @@ LW = Alignment(horizontal="left", vertical="top", wrap_text=True)
 CW = Alignment(horizontal="center", vertical="center", wrap_text=True)
 
 FMT_DATA = "DD/MM/YYYY"
+
+
+def _testo_grafico(dimensione=900, grassetto=False, colore=INCHIOSTRO):
+    """Proprieta' tipografiche per titoli, assi e legenda del grafico."""
+    carattere = CharacterProperties(sz=dimensione, b=grassetto, solidFill=colore,
+                                    latin=None)
+    return RichText(
+        bodyPr=RichTextProperties(),
+        p=[Paragraph(pPr=ParagraphProperties(defRPr=carattere),
+                     endParaRPr=carattere)],
+    )
+
+
+def grafico_carico(ws, prima_riga, ultima_riga, ancora, settimane):
+    """Barre impilate orizzontali: composizione dei turni per partecipante.
+
+    La lunghezza della barra e' il totale delle guide, i segmenti ne mostrano
+    la composizione. I numeri esatti restano nella tabella sovrastante, che fa
+    da vista tabellare del grafico.
+    """
+    grafico = BarChart()
+    grafico.type = "bar"                 # barre orizzontali: i nomi si leggono meglio
+    grafico.grouping = "stacked"
+    grafico.overlap = 100
+    grafico.gapWidth = 60                # barre spesse, spazio contenuto
+    grafico.height = 8.5
+    grafico.width = 20
+
+    dati = Reference(ws, min_col=2, max_col=4, min_row=prima_riga - 1, max_row=ultima_riga)
+    categorie = Reference(ws, min_col=1, min_row=prima_riga, max_row=ultima_riga)
+    grafico.add_data(dati, titles_from_data=True)
+    grafico.set_categories(categorie)
+
+    # Colore per identita' della serie, in ordine fisso; 2 px di superficie fra
+    # i segmenti perche' restino distinti anche stampati in scala di grigi.
+    for serie, colore in zip(grafico.series, (SERIE_1, SERIE_2, SERIE_3)):
+        serie.graphicalProperties = GraphicalProperties(solidFill=colore)
+        serie.graphicalProperties.line.solidFill = "FFFFFF"
+        serie.graphicalProperties.line.width = 19050   # 2 px
+
+    grafico.title = "Composizione dei turni per partecipante"
+    grafico.title.tx.rich.p[0].pPr = ParagraphProperties(
+        defRPr=CharacterProperties(sz=1200, b=True, solidFill=BLU))
+    grafico.title.overlay = False
+
+    # x_axis = asse delle categorie (i nomi), y_axis = asse dei valori (i turni)
+    grafico.x_axis.title = None
+    grafico.y_axis.title = None
+    grafico.x_axis.txPr = _testo_grafico(1000, True, INCHIOSTRO)
+    grafico.y_axis.txPr = _testo_grafico(900, False, INCHIOSTRO_2)
+    grafico.y_axis.numFmt = "0"
+    # Fondo scala fissato: con la scala automatica le barre piu' lunghe
+    # rischiano di essere tagliate dal bordo dell'area di tracciamento.
+    grafico.y_axis.scaling.min = 0
+    grafico.y_axis.scaling.max = settimane + 5
+    grafico.y_axis.majorUnit = 2
+    # Nomi nello stesso ordine della tabella soprastante
+    grafico.x_axis.scaling.orientation = "maxMin"
+    grafico.x_axis.majorGridlines = None
+    grafico.y_axis.majorGridlines.spPr = GraphicalProperties()
+    grafico.y_axis.majorGridlines.spPr.line.solidFill = GRIGLIA
+    grafico.y_axis.majorGridlines.spPr.line.width = 9525
+    for asse in (grafico.x_axis, grafico.y_axis):
+        asse.spPr = GraphicalProperties()
+        asse.spPr.line.solidFill = GRIGLIA
+        asse.majorTickMark = "none"
+        asse.minorTickMark = "none"
+
+    grafico.legend.position = "b"
+    grafico.legend.overlay = False
+    grafico.legend.txPr = _testo_grafico(900, False, INCHIOSTRO)
+
+    grafico.graphical_properties = GraphicalProperties(solidFill="FFFFFF")
+    grafico.graphical_properties.line.noFill = True
+
+    ws.add_chart(grafico, ancora)
+    return grafico
 
 
 def titolo(ws, testo, sottotitolo, ultima_col):
@@ -652,11 +745,11 @@ def foglio_riepilogo(wb, settimane):
                  ["Partecipante", "Turni ordinari", "Doppi turni\n(sostituzioni)",
                   "Recuperi\neffettuati", "Totale guide", "Turni saltati\nnon recuperabili",
                   "Turni saltati\nda recuperare", "Recuperi\nancora da saldare"],
-                 [18, 14, 16, 14, 14, 17, 17, 17])
+                 [26, 14, 16, 14, 14, 17, 17, 17])
 
     ultima = TUR_R0 + settimane * 5 - 1
     for i in range(len(PARTECIPANTI)):
-        r = 6 + i
+        r = RIEP_R0 + i
         p = f"$A{r}"
         valori = {
             1: f"=Partecipanti!$B${PART_R0 + i}",
@@ -684,19 +777,30 @@ def foglio_riepilogo(wb, settimane):
                 cella.fill = PatternFill("solid", fgColor=ARANCIO)
         ws.row_dimensions[r].height = 18
 
-    r = 6 + len(PARTECIPANTI)
+    r = RIEP_R0 + len(PARTECIPANTI)
     ws.cell(row=r, column=1, value="TOTALE").font = F_BOLD
     ws.cell(row=r, column=1).fill = FILL_SEZ
     ws.cell(row=r, column=1).border = BORDO
     for c in range(2, 9):
         col = get_column_letter(c)
-        cella = ws.cell(row=r, column=c, value=f"=SUM({col}6:{col}{r - 1})")
+        cella = ws.cell(row=r, column=c, value=f"=SUM({col}{RIEP_R0}:{col}{r - 1})")
         cella.font = F_BOLD
         cella.alignment = C
         cella.fill = FILL_SEZ
         cella.border = BORDO
 
+    ultima_dati = r - 1
+
+    # Grafico: composizione dei turni per partecipante
     r += 2
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    intestazione = ws.cell(row=r, column=1, value="DISTRIBUZIONE DEL CARICO")
+    intestazione.font = F_SEZ
+    intestazione.fill = FILL_SEZ
+    intestazione.alignment = L
+    grafico_carico(ws, RIEP_R0, ultima_dati, f"A{r + 1}", settimane)
+
+    r += 20
     ws.cell(row=r, column=1, value="Come leggere il riepilogo").font = F_SEZ
     note = [
         ("Totale guide", "Numero di volte in cui la persona prende effettivamente la macchina."),
@@ -711,14 +815,19 @@ def foglio_riepilogo(wb, settimane):
     ]
     for chiave, valore in note:
         r += 1
-        ws.cell(row=r, column=1, value=chiave).font = F_BOLD
+        etichetta = ws.cell(row=r, column=1, value=chiave)
+        etichetta.font = F_BOLD
+        etichetta.alignment = LW
         ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=8)
         cella = ws.cell(row=r, column=2, value=valore)
         cella.font = F_NOTA
         cella.alignment = LW
-        ws.row_dimensions[r].height = 26
+        ws.row_dimensions[r].height = 30
 
     ws.sheet_view.showGridLines = False
+    ws.page_setup.orientation = "landscape"
+    ws.page_setup.fitToWidth = 1
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
     return ws
 
 

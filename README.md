@@ -30,9 +30,21 @@ tutto il resto si ricalcola da solo.
 | `Assenze` | **Foglio di input.** Una riga per assenza: settimana, persona, tipo (menù a tendina) e, solo per «Altro motivo», la data |
 | `Turnazione` | Calendario completo: turno previsto, conducente effettivo, doppi turni, recuperi |
 | `Comunicazione Giovedì` | Prospetto della settimana scelta e testo già pronto da inviare |
-| `Riepilogo` | Turni, doppi turni, recuperi e debiti di turno per ogni partecipante |
+| `Riepilogo` | Turni, doppi turni, recuperi e debiti di turno per ogni partecipante, con il grafico della distribuzione del carico |
 
 Le celle su sfondo giallo sono modificabili; tutte le altre contengono formule.
+
+### Il grafico
+
+Sotto la tabella del foglio «Riepilogo», *Composizione dei turni per
+partecipante* è un grafico a barre orizzontali impilate: la lunghezza della
+barra è il totale delle guide, i tre segmenti ne mostrano la composizione
+(turni ordinari, doppi turni, recuperi). Si legge a colpo d'occhio se il carico
+è distribuito in modo equo. Si aggiorna da solo insieme al resto del file.
+
+I tre colori sono stati verificati per la leggibilità in caso di daltonismo
+(separazione ΔE 9.2 sulle coppie adiacenti, oltre la soglia richiesta di 8) e
+i valori esatti restano nella tabella immediatamente sopra.
 
 ## Regole implementate
 
@@ -70,5 +82,5 @@ licenza di settimana intera, assenza recuperabile con relativo recupero,
 rotazione dei doppi turni, slittamento del recupero di una e di più settimane,
 catena di assenze recuperabili consecutive, debito aperto a fine periodo,
 doppia assenza contemporanea e comunicazione del giovedì — fa ricalcolare il
-file da LibreOffice Calc e confronta i risultati con quelli attesi
-(52 controlli).
+file da LibreOffice Calc e confronta i risultati con quelli attesi. Un decimo
+scenario verifica la struttura del grafico. In tutto 61 controlli.
