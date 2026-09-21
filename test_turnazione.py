@@ -272,9 +272,9 @@ def main():
     print(testo)
 
     # ------------------------------------------------------------- SCENARIO M
-    print("\nSCENARIO M - grafico «Composizione dei turni per partecipante»")
+    print("\nSCENARIO M - grafici del foglio «Riepilogo»")
     ws = load_workbook(sorgente)["Riepilogo"]
-    verifica("un solo grafico nel foglio Riepilogo", 1, len(ws._charts))
+    verifica("due grafici nel foglio Riepilogo", 2, len(ws._charts))
     grafico = ws._charts[0]
     verifica("barre orizzontali impilate", ("bar", "stacked"),
              (grafico.type, grafico.grouping))
@@ -294,6 +294,47 @@ def main():
     riferimento_cat = (categorie.strRef or categorie.numRef).f
     verifica("le categorie leggono i nomi in colonna A",
              "Riepilogo!$A$6:$A$10", str(riferimento_cat).replace("'", ""))
+
+    settimanale = ws._charts[1]
+    verifica("secondo grafico: colonne impilate", ("col", "stacked"),
+             (settimanale.type, settimanale.grouping))
+    verifica("quattro serie: ordinari, sostituzioni, recuperi, da assegnare",
+             4, len(settimanale.series))
+    verifica("i primi tre colori coincidono con quelli del primo grafico",
+             ["2A78D6", "EB6834", "1BAF7A"],
+             [x.graphicalProperties.solidFill.srgbClr for x in settimanale.series[:3]])
+    verifica("quarto colore per «Da assegnare»", "EDA100",
+             settimanale.series[3].graphicalProperties.solidFill.srgbClr)
+    verifica("fondo scala pari ai cinque turni settimanali", (0, 5),
+             (settimanale.y_axis.scaling.min, settimanale.y_axis.scaling.max))
+    verifica("13 settimane in categoria", "Riepilogo!$A$36:$A$48",
+             str((settimanale.series[0].cat.strRef
+                  or settimanale.series[0].cat.numRef).f).replace("'", ""))
+
+    # la tabella settimanale deve quadrare con la tabella per partecipante
+    wb = banco.esegui("m", [(2, "Nicola", LICENZA, None),
+                            (3, "Rocco", ALTRO, dt.date(2026, 10, 14)),
+                            (5, "Savino", ESTERNA, None)])
+    rip = wb["Riepilogo"]
+    per_persona = riepilogo(wb)
+    somma = {
+        "ordinari": sum(rip.cell(x, 3).value for x in range(36, 49)),
+        "sostituzioni": sum(rip.cell(x, 4).value for x in range(36, 49)),
+        "recuperi": sum(rip.cell(x, 5).value for x in range(36, 49)),
+        "da_assegnare": sum(rip.cell(x, 6).value for x in range(36, 49)),
+    }
+    atteso = {
+        "ordinari": sum(v[0] for v in per_persona.values()),
+        "sostituzioni": sum(v[1] for v in per_persona.values()),
+        "recuperi": sum(v[2] for v in per_persona.values()),
+        "da_assegnare": 0,
+    }
+    verifica("tabella settimanale e tabella per partecipante quadrano", atteso, somma)
+    verifica("ogni settimana somma sempre a 5 turni", {5},
+             {rip.cell(x, 3).value + rip.cell(x, 4).value + rip.cell(x, 5).value
+              + rip.cell(x, 6).value for x in range(36, 49)})
+    verifica("il periodo della settimana 1 è leggibile per intero",
+             "28/09 - 02/10/2026", rip.cell(36, 2).value)
 
     print(f"\nControlli superati: {esiti['ok']} · falliti: {esiti['ko']}")
     shutil.rmtree(lavoro, ignore_errors=True)

@@ -30,21 +30,30 @@ tutto il resto si ricalcola da solo.
 | `Assenze` | **Foglio di input.** Una riga per assenza: settimana, persona, tipo (menù a tendina) e, solo per «Altro motivo», la data |
 | `Turnazione` | Calendario completo: turno previsto, conducente effettivo, doppi turni, recuperi |
 | `Comunicazione Giovedì` | Prospetto della settimana scelta e testo già pronto da inviare |
-| `Riepilogo` | Turni, doppi turni, recuperi e debiti di turno per ogni partecipante, con il grafico della distribuzione del carico |
+| `Riepilogo` | Turni, doppi turni, recuperi e debiti di turno per ogni partecipante e per settimana, con due grafici |
 
 Le celle su sfondo giallo sono modificabili; tutte le altre contengono formule.
 
-### Il grafico
+### I due grafici
 
-Sotto la tabella del foglio «Riepilogo», *Composizione dei turni per
-partecipante* è un grafico a barre orizzontali impilate: la lunghezza della
-barra è il totale delle guide, i tre segmenti ne mostrano la composizione
-(turni ordinari, doppi turni, recuperi). Si legge a colpo d'occhio se il carico
-è distribuito in modo equo. Si aggiorna da solo insieme al resto del file.
+Il foglio «Riepilogo» ha due sezioni, ciascuna con la sua tabella e il suo
+grafico. Entrambi si aggiornano da soli insieme al resto del file.
 
-I tre colori sono stati verificati per la leggibilità in caso di daltonismo
-(separazione ΔE 9.2 sulle coppie adiacenti, oltre la soglia richiesta di 8) e
-i valori esatti restano nella tabella immediatamente sopra.
+**Distribuzione del carico** — *Composizione dei turni per partecipante*, a
+barre orizzontali impilate: la lunghezza della barra è il totale delle guide,
+i tre segmenti ne mostrano la composizione (turni ordinari, doppi turni,
+recuperi). Dice a colpo d'occhio se il carico è distribuito in modo equo.
+
+**Andamento settimanale** — *Composizione dei turni settimana per settimana*, a
+colonne impilate: ogni colonna vale i cinque turni di una settimana, divisi fra
+ordinari, sostituzioni, recuperi e — nel caso limite in cui non ci sia alcun
+sostituto disponibile — turni da assegnare. Mostra in quali settimane la
+turnazione ha subito variazioni.
+
+I tre colori del primo grafico conservano lo stesso significato nel secondo.
+La palette è stata verificata per la leggibilità in caso di daltonismo
+(separazione ΔE 9.1 sulle coppie adiacenti, oltre la soglia richiesta di 8) e i
+valori esatti restano nelle tabelle affiancate a ciascun grafico.
 
 ## Regole implementate
 
@@ -83,4 +92,5 @@ rotazione dei doppi turni, slittamento del recupero di una e di più settimane,
 catena di assenze recuperabili consecutive, debito aperto a fine periodo,
 doppia assenza contemporanea e comunicazione del giovedì — fa ricalcolare il
 file da LibreOffice Calc e confronta i risultati con quelli attesi. Un decimo
-scenario verifica la struttura del grafico. In tutto 61 controlli.
+scenario verifica la struttura dei due grafici e la quadratura fra la tabella
+settimanale e quella per partecipante. In tutto 70 controlli.

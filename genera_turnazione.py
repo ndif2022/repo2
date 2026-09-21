@@ -19,6 +19,7 @@ from openpyxl.chart.text import RichText
 from openpyxl.drawing.text import (CharacterProperties, Paragraph, ParagraphProperties,
                                    RichTextProperties)
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+from openpyxl.worksheet.pagebreak import Break
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.workbook.defined_name import DefinedName
@@ -79,6 +80,7 @@ FILL_GRIGIO = PatternFill("solid", fgColor=GRIGIO)
 SERIE_1 = "2A78D6"
 SERIE_2 = "EB6834"
 SERIE_3 = "1BAF7A"
+SERIE_4 = "EDA100"
 INCHIOSTRO = "0B0B0B"
 INCHIOSTRO_2 = "52514E"
 GRIGLIA = "D8D8D4"
@@ -150,6 +152,65 @@ def grafico_carico(ws, prima_riga, ultima_riga, ancora, settimane):
     grafico.y_axis.majorUnit = 2
     # Nomi nello stesso ordine della tabella soprastante
     grafico.x_axis.scaling.orientation = "maxMin"
+    grafico.x_axis.majorGridlines = None
+    grafico.y_axis.majorGridlines.spPr = GraphicalProperties()
+    grafico.y_axis.majorGridlines.spPr.line.solidFill = GRIGLIA
+    grafico.y_axis.majorGridlines.spPr.line.width = 9525
+    for asse in (grafico.x_axis, grafico.y_axis):
+        asse.spPr = GraphicalProperties()
+        asse.spPr.line.solidFill = GRIGLIA
+        asse.majorTickMark = "none"
+        asse.minorTickMark = "none"
+
+    grafico.legend.position = "b"
+    grafico.legend.overlay = False
+    grafico.legend.txPr = _testo_grafico(900, False, INCHIOSTRO)
+
+    grafico.graphical_properties = GraphicalProperties(solidFill="FFFFFF")
+    grafico.graphical_properties.line.noFill = True
+
+    ws.add_chart(grafico, ancora)
+    return grafico
+
+
+def grafico_settimane(ws, prima_riga, ultima_riga, ancora):
+    """Colonne impilate: composizione dei turni settimana per settimana.
+
+    Ogni colonna vale cinque turni; i segmenti dicono quanti sono ordinari e
+    quanti derivano da una variazione. I tre colori del grafico precedente
+    conservano qui lo stesso significato.
+    """
+    grafico = BarChart()
+    grafico.type = "col"
+    grafico.grouping = "stacked"
+    grafico.overlap = 100
+    grafico.gapWidth = 50
+    grafico.height = 8.5
+    grafico.width = 24
+
+    dati = Reference(ws, min_col=3, max_col=6, min_row=prima_riga - 1, max_row=ultima_riga)
+    categorie = Reference(ws, min_col=1, min_row=prima_riga, max_row=ultima_riga)
+    grafico.add_data(dati, titles_from_data=True)
+    grafico.set_categories(categorie)
+
+    for serie, colore in zip(grafico.series, (SERIE_1, SERIE_2, SERIE_3, SERIE_4)):
+        serie.graphicalProperties = GraphicalProperties(solidFill=colore)
+        serie.graphicalProperties.line.solidFill = "FFFFFF"
+        serie.graphicalProperties.line.width = 19050   # 2 px
+
+    grafico.title = "Composizione dei turni settimana per settimana"
+    grafico.title.tx.rich.p[0].pPr = ParagraphProperties(
+        defRPr=CharacterProperties(sz=1200, b=True, solidFill=BLU))
+    grafico.title.overlay = False
+
+    grafico.x_axis.title = None
+    grafico.y_axis.title = None
+    grafico.x_axis.txPr = _testo_grafico(900, True, INCHIOSTRO)
+    grafico.y_axis.txPr = _testo_grafico(900, False, INCHIOSTRO_2)
+    grafico.y_axis.numFmt = "0"
+    grafico.y_axis.scaling.min = 0
+    grafico.y_axis.scaling.max = 5          # cinque turni a settimana, sempre
+    grafico.y_axis.majorUnit = 1
     grafico.x_axis.majorGridlines = None
     grafico.y_axis.majorGridlines.spPr = GraphicalProperties()
     grafico.y_axis.majorGridlines.spPr.line.solidFill = GRIGLIA
@@ -639,6 +700,7 @@ def foglio_turnazione(wb, inizio, fine, settimane):
     ws.print_title_rows = "5:5"
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     return ws
 
@@ -745,7 +807,7 @@ def foglio_riepilogo(wb, settimane):
                  ["Partecipante", "Turni ordinari", "Doppi turni\n(sostituzioni)",
                   "Recuperi\neffettuati", "Totale guide", "Turni saltati\nnon recuperabili",
                   "Turni saltati\nda recuperare", "Recuperi\nancora da saldare"],
-                 [26, 14, 16, 14, 14, 17, 17, 17])
+                 [26, 20, 16, 14, 14, 17, 17, 17])
 
     ultima = TUR_R0 + settimane * 5 - 1
     for i in range(len(PARTECIPANTI)):
@@ -800,6 +862,55 @@ def foglio_riepilogo(wb, settimane):
     intestazione.alignment = L
     grafico_carico(ws, RIEP_R0, ultima_dati, f"A{r + 1}", settimane)
 
+    # Tabella e grafico dell'andamento settimanale
+    r += 20
+    ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=8)
+    ws.row_breaks.append(Break(id=r - 1))
+    intestazione = ws.cell(row=r, column=1, value="ANDAMENTO SETTIMANALE")
+    intestazione.font = F_SEZ
+    intestazione.fill = FILL_SEZ
+    intestazione.alignment = L
+
+    r += 2
+    riga_intestazioni = r
+    etichette = ["Settimana", "Periodo", "Turni ordinari", "Sostituzioni\n(doppi turni)",
+                 "Recuperi", "Da assegnare", "Variazioni totali"]
+    for c, testo in enumerate(etichette, start=1):
+        cella = ws.cell(row=r, column=c, value=testo)
+        cella.font = F_HEAD
+        cella.fill = FILL_HEAD
+        cella.alignment = CW
+        cella.border = BORDO
+    ws.row_dimensions[r].height = 30
+
+    for w in range(1, settimane + 1):
+        r += 1
+        pos = f"({w}-1)*5+1"
+        valori = {
+            1: w,
+            2: f'=TEXT(INDEX(Turnazione!$B${TUR_R0}:$B${ultima},{pos}),"dd/mm")&" - "&'
+               f'TEXT(INDEX(Turnazione!$B${TUR_R0}:$B${ultima},{pos}+4),"dd/mm/yyyy")',
+            3: f'=COUNTIFS(Turnazione!$A${TUR_R0}:$A${ultima},$A{r},'
+               f'Turnazione!$G${TUR_R0}:$G${ultima},"Ordinario")',
+            4: f'=COUNTIFS(Turnazione!$A${TUR_R0}:$A${ultima},$A{r},'
+               f'Turnazione!$G${TUR_R0}:$G${ultima},"Sostituzione (doppio turno)")',
+            5: f'=COUNTIFS(Turnazione!$A${TUR_R0}:$A${ultima},$A{r},'
+               f'Turnazione!$G${TUR_R0}:$G${ultima},"Recupero")',
+            6: f'=COUNTIFS(Turnazione!$A${TUR_R0}:$A${ultima},$A{r},'
+               f'Turnazione!$G${TUR_R0}:$G${ultima},"DA ASSEGNARE")',
+            7: f"=$D{r}+$E{r}+$F{r}",
+        }
+        for c, v in valori.items():
+            cella = ws.cell(row=r, column=c, value=v)
+            cella.font = F_BOLD if c == 7 else F_BASE
+            cella.alignment = L if c == 2 else C
+            cella.border = BORDO
+            if c == 7:
+                cella.fill = FILL_GRIGIO
+        ws.row_dimensions[r].height = 16
+
+    grafico_settimane(ws, riga_intestazioni + 1, r, f"A{r + 2}")
+
     r += 20
     ws.cell(row=r, column=1, value="Come leggere il riepilogo").font = F_SEZ
     note = [
@@ -827,6 +938,7 @@ def foglio_riepilogo(wb, settimane):
     ws.sheet_view.showGridLines = False
     ws.page_setup.orientation = "landscape"
     ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0     # adatta solo la larghezza, non comprime l'altezza
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     return ws
 
